@@ -98,9 +98,7 @@ This section initializes the Tkinter GUI and starts the application loop.
 3. Run the script: `python chess_gui.py`
 
 ## Future Enhancements
-- Add piece images instead of Unicode symbols.
-- Implement time control for games.
-- Support multiplayer mode.
+- Allow hints and enable user learning
 - Improve AI difficulty scaling beyond skill levels.
 
 This documentation provides an overview of how the Chess AI GUI works, covering its structure, functionalities, and usage.
