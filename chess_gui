@@ -1,0 +1,232 @@
+import tkinter as tk
+from tkinter import messagebox, simpledialog
+import chess
+import chess.engine
+import random
+
+# Initialize the chess engine (Stockfish)
+engine_path = r"C:\Users\sydne\OneDrive\Desktop\chess web\stockfish-windows-x86-64-avx2 (1)\stockfish\stockfish-windows-x86-64-avx2.exe"
+engine = chess.engine.SimpleEngine.popen_uci(engine_path)
+
+
+class ChessGUI:
+    def __init__(self, root):
+        self.root = root
+        self.root.title("Chess AI")
+        self.difficulty = None
+        self.ai_thinking_time = None
+        self.blunder_chance = None
+        self.player_color = None
+        self.board = None
+        self.selected_square = None
+        self.last_move = None
+        self.show_start_screen()
+
+    def show_start_screen(self):
+        self.start_frame = tk.Frame(self.root)
+        self.start_frame.pack(expand=True)
+        tk.Label(self.start_frame, text="Welcome to Chess AI", font=("Arial", 20)).pack(pady=20)
+        tk.Label(self.start_frame, text="Select Difficulty:", font=("Arial", 14)).pack(pady=10)
+        tk.Button(self.start_frame, text="Easy (400)", command=lambda: self.set_difficulty(400), font=("Arial", 12)).pack(pady=5)
+        tk.Button(self.start_frame, text="Medium (1000)", command=lambda: self.set_difficulty(1000), font=("Arial", 12)).pack(pady=5)
+        tk.Button(self.start_frame, text="Hard (1800)", command=lambda: self.set_difficulty(1800), font=("Arial", 12)).pack(pady=5)
+
+    def set_difficulty(self, rating):
+        self.difficulty = rating
+        if rating == 400:  # Easy
+            engine.configure({"Skill Level": 0})
+            self.ai_thinking_time = 0.01
+            self.blunder_chance = 0.5
+        elif rating == 1000:  # Medium
+            engine.configure({"Skill Level": 5})
+            self.ai_thinking_time = 0.1
+            self.blunder_chance = 0.1
+        else:  # Hard (1800)
+            engine.configure({"Skill Level": 15})
+            self.ai_thinking_time = 0.5
+            self.blunder_chance = 0.0
+        self.show_color_selection()
+
+    def show_color_selection(self):
+        self.start_frame.destroy()
+        self.start_frame = tk.Frame(self.root)
+        self.start_frame.pack(expand=True)
+        tk.Label(self.start_frame, text=f"Difficulty set to {self.difficulty}", font=("Arial", 14)).pack(pady=20)
+        tk.Button(self.start_frame, text="Play as White", command=lambda: self.start_game(chess.WHITE), font=("Arial", 14)).pack(pady=10)
+        tk.Button(self.start_frame, text="Play as Black", command=lambda: self.start_game(chess.BLACK), font=("Arial", 14)).pack(pady=10)
+
+    def start_game(self, color):
+        self.player_color = color
+        self.board = chess.Board()
+        self.start_frame.destroy()
+        self.create_widgets()
+        self.update_board()
+        if self.player_color == chess.BLACK:
+            self.root.after(100, self.ai_move)
+
+    def create_widgets(self):
+        self.canvas = tk.Canvas(self.root, width=480, height=480)
+        self.canvas.pack()
+        self.canvas.bind("<Button-1>", self.on_click)
+        self.status_label = tk.Label(self.root, text=f"Your move as {'White' if self.player_color == chess.WHITE else 'Black'}")
+        self.status_label.pack()
+        self.difficulty_label = tk.Label(self.root, text=f"AI Difficulty: {self.difficulty}")
+        self.difficulty_label.pack()
+        self.hint_button = tk.Button(self.root, text="Get Hint", command=self.get_hint)
+        self.hint_button.pack()
+        self.undo_button = tk.Button(self.root, text="Undo Move", command=self.undo_move)
+        self.undo_button.pack()
+
+    def update_board(self):
+        self.canvas.delete("all")
+        colors = ["#DDB88C", "#A66D4F"]
+        for row in range(8):
+            for col in range(8):
+                color = colors[(row + col) % 2]
+                x1 = col * 60
+                y1 = row * 60
+                x2 = x1 + 60
+                y2 = y1 + 60
+                self.canvas.create_rectangle(x1, y1, x2, y2, fill=color)
+
+        if self.last_move:
+            self.highlight_square(self.last_move.from_square, "yellow")
+            self.highlight_square(self.last_move.to_square, "yellow")
+
+        if self.selected_square is not None:
+            self.highlight_square(self.selected_square, "blue")
+            for move in self.board.legal_moves:
+                if move.from_square == self.selected_square:
+                    self.highlight_square(move.to_square, "green", outline_only=True)
+
+        for square in chess.SQUARES:
+            piece = self.board.piece_at(square)
+            if piece:
+                col = chess.square_file(square)
+                row = chess.square_rank(square)
+                if self.player_color == chess.WHITE:
+                    row = 7 - row
+                    col = 7 - col
+                self.draw_piece(piece, col * 60, row * 60)
+
+    def highlight_square(self, square, color="yellow", outline_only=False):
+        col = chess.square_file(square)
+        row = chess.square_rank(square)
+        if self.player_color == chess.WHITE:
+            row = 7 - row
+            col = 7 - col
+        x1 = col * 60
+        y1 = row * 60
+        x2 = x1 + 60
+        y2 = y1 + 60
+        if outline_only:
+            self.canvas.create_rectangle(x1, y1, x2, y2, outline=color, width=3)
+        else:
+            self.canvas.create_rectangle(x1, y1, x2, y2, fill=color, outline="")
+
+    def draw_piece(self, piece, x, y):
+        piece_text = piece.unicode_symbol()
+        self.canvas.create_text(x + 30, y + 30, text=piece_text, font=("Arial", 24), fill="black")
+
+    def on_click(self, event):
+        col = event.x // 60
+        row = event.y // 60
+        if self.player_color == chess.WHITE:
+            col = 7 - col
+            row = 7 - row
+        square = chess.square(col, row)
+
+        if self.board.turn == self.player_color:
+            if self.selected_square is None:
+                piece = self.board.piece_at(square)
+                if piece and piece.color == self.player_color:
+                    self.selected_square = square
+                    self.update_board()
+            else:
+                move = chess.Move(self.selected_square, square)
+                if (self.board.piece_at(self.selected_square).piece_type == chess.PAWN and 
+                    ((self.player_color == chess.WHITE and chess.square_rank(square) == 7) or
+                     (self.player_color == chess.BLACK and chess.square_rank(square) == 0))):
+                    promotion_piece = self.ask_promotion()
+                    if promotion_piece:
+                        move = chess.Move(self.selected_square, square, promotion=promotion_piece)
+                    else:
+                        self.selected_square = None
+                        self.update_board()
+                        return
+
+                if move in self.board.legal_moves:
+                    self.board.push(move)
+                    self.last_move = move
+                    self.selected_square = None
+                    self.update_board()
+
+                    if self.board.is_checkmate():
+                        messagebox.showinfo("Game Over", f"You Win! Checkmate as {'White' if self.player_color == chess.WHITE else 'Black'}!")
+                        return
+                    elif self.board.is_stalemate():
+                        messagebox.showinfo("Game Over", "Stalemate! The game is a draw.")
+                        return
+                    elif self.board.is_insufficient_material():
+                        messagebox.showinfo("Game Over", "Draw due to insufficient material!")
+                        return
+                    elif self.board.is_fivefold_repetition() or self.board.is_seventyfive_moves():
+                        messagebox.showinfo("Game Over", "Draw by repetition or 75-move rule!")
+                        return
+
+                    self.status_label.config(text="AI's move")
+                    self.root.after(100, self.ai_move)
+                else:
+                    self.selected_square = None
+                self.update_board()
+
+    def ask_promotion(self):
+        piece = simpledialog.askstring("Promotion", "Promote to (q, r, b, n):", parent=self.root)
+        if piece:
+            piece = piece.lower()
+            promotion_map = {'q': chess.QUEEN, 'r': chess.ROOK, 'b': chess.BISHOP, 'n': chess.KNIGHT}
+            return promotion_map.get(piece, chess.QUEEN)
+        return None
+
+    def ai_move(self):
+        if random.random() < self.blunder_chance:
+            legal_moves = list(self.board.legal_moves)
+            move = random.choice(legal_moves) if legal_moves else None
+        else:
+            result = engine.play(self.board, chess.engine.Limit(time=self.ai_thinking_time))
+            move = result.move
+        
+        if move:
+            self.board.push(move)
+            self.last_move = move
+            self.update_board()
+            self.status_label.config(text=f"Your move as {'White' if self.player_color == chess.WHITE else 'Black'}")
+
+        if self.board.is_checkmate():
+            messagebox.showinfo("Game Over", f"AI Wins! Checkmate as {'White' if self.player_color == chess.BLACK else 'Black'}!")
+        elif self.board.is_stalemate():
+            messagebox.showinfo("Game Over", "Stalemate! The game is a draw.")
+        elif self.board.is_insufficient_material():
+            messagebox.showinfo("Game Over", "Draw due to insufficient material!")
+        elif self.board.is_fivefold_repetition() or self.board.is_seventyfive_moves():
+            messagebox.showinfo("Game Over", "Draw by repetition or 75-move rule!")
+
+    def get_hint(self):
+        result = engine.play(self.board, chess.engine.Limit(time=self.ai_thinking_time))
+        hint_move = result.move
+        messagebox.showinfo("Hint", f"Consider the move: {hint_move}")
+
+    def undo_move(self):
+        if len(self.board.move_stack) >= 2:
+            self.board.pop()
+            self.board.pop()
+            self.last_move = self.board.move_stack[-1] if self.board.move_stack else None
+            self.update_board()
+            self.status_label.config(text=f"Your move as {'White' if self.player_color == chess.WHITE else 'Black'}")
+
+if __name__ == "__main__":
+    root = tk.Tk()
+    root.geometry("480x600")
+    gui = ChessGUI(root)
+    root.mainloop()
+    engine.quit()
